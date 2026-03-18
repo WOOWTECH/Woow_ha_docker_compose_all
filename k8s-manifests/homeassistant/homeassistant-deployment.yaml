@@ -1,0 +1,104 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homeassistant
+  namespace: homeassistant
+  labels:
+    app: homeassistant
+    component: homeassistant
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: homeassistant
+      component: homeassistant
+  template:
+    metadata:
+      labels:
+        app: homeassistant
+        component: homeassistant
+    spec:
+      # hostNetwork: true allows Home Assistant to discover devices on the
+      # local network (mDNS, SSDP, etc.). If device discovery is not needed,
+      # set this to false and rely on the NodePort Service instead.
+      hostNetwork: false
+      dnsPolicy: ClusterFirst
+      initContainers:
+        # Wait for PostgreSQL to be ready before starting Home Assistant
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres.homeassistant.svc.cluster.local -p 5432 -U homeassistant; do
+                echo "Waiting for PostgreSQL to be ready..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready."
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+      containers:
+        - name: homeassistant
+          image: ghcr.io/home-assistant/home-assistant:stable
+          ports:
+            - containerPort: 8123
+              name: http
+              protocol: TCP
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: homeassistant-config
+                  key: TZ
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          volumeMounts:
+            - name: ha-config
+              mountPath: /config
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8123
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8123
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8123
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          securityContext:
+            privileged: true
+      volumes:
+        - name: ha-config
+          persistentVolumeClaim:
+            claimName: ha-config
+      terminationGracePeriodSeconds: 30

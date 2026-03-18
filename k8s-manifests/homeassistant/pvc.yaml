@@ -1,0 +1,34 @@
+---
+# PVC for Home Assistant /config directory
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ha-config
+  namespace: homeassistant
+  labels:
+    app: homeassistant
+    component: homeassistant
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi
+---
+# PVC for PostgreSQL data directory
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: homeassistant
+  labels:
+    app: homeassistant
+    component: postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
